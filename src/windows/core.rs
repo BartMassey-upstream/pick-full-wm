@@ -216,3 +216,31 @@ pub fn release_window(state: &mut crate::state::State, window: Window) {
     crate::windows::layout::place_close_boxes(state);
     crate::windows::layout::place_monitor_boxes(state);
 }
+
+/// Expose hidden clients for the incoming WM and remove this WM's transient UI.
+pub fn prepare_handoff(state: &crate::state::State) -> crate::manager::Result<()> {
+    for monitor in &state.monitors {
+        for window in monitor.close_box.into_iter().chain(monitor.monitor_box) {
+            let _ = state.conn.destroy_window(window)?.check();
+        }
+        for workspace in &monitor.workspaces {
+            for window in workspace
+                .main_window
+                .into_iter()
+                .chain(workspace.side_windows.iter().flatten().copied())
+                .chain(workspace.floatings.iter().copied())
+            {
+                let _ = state.conn.map_window(window)?.check();
+            }
+            for window in workspace
+                .help_window
+                .into_iter()
+                .chain(workspace.key_hint_windows.values().copied())
+            {
+                let _ = state.conn.destroy_window(window)?.check();
+            }
+        }
+    }
+    state.conn.flush()?;
+    Ok(())
+}

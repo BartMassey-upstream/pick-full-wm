@@ -31,5 +31,13 @@ atom_manager! {
         WM_NAME,
         WM_PROTOCOLS,
         WM_DELETE_WINDOW,
+        WM_STATE,
+        MANAGER,
+        TARGETS,
+        MULTIPLE,
+        ATOM_PAIR,
+        TIMESTAMP,
+        VERSION,
+        _PICK_FULL_WM_TIMESTAMP,
     }
 }

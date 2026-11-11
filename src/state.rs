@@ -7,6 +7,7 @@ use x11rb::rust_connection::RustConnection;
 pub struct State {
     pub settings: crate::settings::Settings,
     pub conn: RustConnection,
+    pub manager: crate::manager::Manager,
     pub screen_num: usize,
     pub root: Window,
     pub atoms: crate::atoms::Atoms,
@@ -22,9 +23,14 @@ pub struct State {
     pub startup_warnings: Vec<String>, // logged once logging is set up
 }
 impl State {
-    pub fn init() -> Self {
+    pub fn init(replace: bool) -> crate::manager::Result<Self> {
         let (settings, mut startup_warnings) = crate::settings::load_settings();
-        let (conn, screen_num) = crate::setup::internal::connect();
+        if settings.bindings.workspaces.is_empty() {
+            return Err(
+                "configure at least one workspace before starting the window manager".into(),
+            );
+        }
+        let (conn, screen_num) = x11rb::connect(None)?;
         let screen = &conn.setup().roots[screen_num];
         let root = screen.root;
         let atoms = crate::atoms::Atoms::new(&conn)
@@ -32,6 +38,9 @@ impl State {
             .reply()
             .expect("Failed to get atom reply");
         let mut monitor_infos = get_monitor_infos(&conn, root);
+        if monitor_infos.is_empty() {
+            return Err("no active RandR monitors were found on this X screen".into());
+        }
         monitor_infos.sort_by_key(|m| m.position.0);
         let mut monitors: Vec<Monitor> = vec![];
         for (index, info) in monitor_infos.iter().enumerate() {
@@ -40,9 +49,11 @@ impl State {
             monitor.print();
             monitors.push(monitor);
         }
-        Self {
+        let manager = crate::manager::Manager::acquire(&conn, screen_num, &atoms, replace)?;
+        Ok(Self {
             settings,
             conn,
+            manager,
             screen_num,
             root,
             atoms,
@@ -56,7 +67,7 @@ impl State {
             published_client_stacking: vec![],
             published_desktops: HashMap::new(),
             startup_warnings,
-        }
+        })
     }
     pub fn monitor(&self) -> &Monitor {
         &self.monitors[self.current_monitor]

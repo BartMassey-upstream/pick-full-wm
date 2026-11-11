@@ -1,6 +1,7 @@
 # pick-full-wm
 
-`pick-full-wm`: an [x11](https://en.wikipedia.org/wiki/X_Window_System) window manager written in [Rust](https://rust-lang.org/) with the [x11rb crate](https://crates.io/crates/x11rb)'s [xcb](https://xcb.freedesktop.org/) bindings.
+`pick-full-wm` is an X11 window manager written in Rust using
+the [x11rb](https://docs.rs/x11rb/) protocol bindings.
 
 The primary workflow is to focus on one nearly full screen window at a time, with the ability to quickly switch to other windows preview-able on the side of the screen.
 
@@ -12,7 +13,15 @@ https://github.com/user-attachments/assets/758ea78a-3893-43a3-b48f-3e881a7a093e
 
 # Usage
 
-An x11 window manager is built into a single executable, so should work from a standardly built Rust file. Simply put, a `cargo build --release` should build you a working version of `pick-full-wm` at `/your/repo/target/release/pick-full-wm`.
+Build the window manager and all helper programs together:
+
+```sh
+cargo build --release --locked --bins
+```
+
+The executable is `target/release/pick-full-wm`. If installing it
+elsewhere, keep `help_window`, `key_hint`, `close_box`, and
+`monitor_box` in the same directory.
 
 There two primary ways (that I know of) to launch into `pick-full-wm`.
 
@@ -20,11 +29,44 @@ The first is via an appropriate `.xinitrc` file from a TTY session via the [`sta
 
 The second is from a display manager such as [`SDDM`](https://github.com/sddm/sddm), which looks for an appropriate [`.desktop` file](https://wiki.archlinux.org/title/Desktop_entries) in `/usr/share/xsessions/`, and can be loaded from some window manager menu (bottom left in SDDM's interface). An example `pick-full.desktop` is found in the root of this repository.
 
-The next layer is configuring your `settings.toml` file. There is are two examples in the root of this repository: `setting-mouse.toml` and `setting-keyboard.toml`. Choose your preferred starter, copy it as "settings.toml" into `~/.config/pick-full-wm/`, and start editing as desired.
+The next layer is configuring your `settings.toml` file. There is are two examples in the root of this repository: `settings-mouse.toml` and `settings-keyboard.toml`. Choose your preferred starter, copy it as "settings.toml" into `~/.config/pick-full-wm/`, and start editing as desired.
 
 The current mouse defaults use [`xfce4-panel`](https://packages.debian.org/trixie/xfce4-panel) for both launcher and status bar. The current keyboard defaults use [`rofi`](https://github.com/davatorium/rofi) as an application launcher and [`polybar`](https://github.com/polybar/polybar) as a status bar. Both use `brightnessctl` for brightness control and `wpctl` for volume control. These are very much dynamic and change-able, though, of course: just startup and exclude clarifications.
 
 By default, both settings place their log files in `~/.local/share/pick-full-wm/logs/`. A new log file is placed here upon every startup of the window manager: named along the lines of `DATE-TIME.log`.
+
+# Replacing a running window manager
+
+From an existing X11 session, request a cooperative handoff:
+
+```sh
+./target/release/pick-full-wm --replace &
+```
+
+Without `--replace`, startup refuses to displace an existing WM.
+Replacement uses the screen's ICCCM `WM_Sn` selection and waits
+up to five seconds for the previous owner window to disappear.
+If it does not cooperate, or another client still owns root
+redirection, startup fails without killing the old WM's clients.
+
+Existing clients, including iconic windows, are adopted and
+retiled on the first workspace. The old WM's layout and workspace
+assignments are not imported. Pick-Full also cooperates when
+another WM replaces it, exposing clients from hidden workspaces
+before releasing control.
+
+For an existing XFCE session, pass `--no-session-services` and
+set `applications.startups = []`
+in the Pick-Full configuration so its default startup commands
+do not duplicate desktop components. XFCE can continue running
+its panel, desktop, settings daemon, and session manager. A fresh
+LightDM session should start only its chosen WM; `--replace` is
+for switching an already running session.
+
+`--no-session-services` skips publishing D-Bus/systemd activation
+variables, clearing the shared Wayland environment, and restarting
+portal services. Use it when XFCE or another session manager owns
+those services, including an isolated XFCE profile.
 
 # Panels
 
@@ -104,11 +146,8 @@ cargo test --locked --test x11 -- --ignored
 - [ ] Media keys shouldn't need SUPER held
 - [ ] Support for horizontal rather than vertical side windows
 
-There are some other bigger considerations that would be core to the intent of the system, and thus are not simply written as TODOs. Some of these are:
-- Some concept of side-by-side windows
-- Side windows being rendered previews rather than actual resizes
-- Functionality to swap between handled and floating (like Niri)
-- Wayland support
+One possible future direction is a preview system for side
+windows instead of directly changing their size and position.
 
 # Credit
 

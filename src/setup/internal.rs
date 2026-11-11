@@ -1,7 +1,5 @@
-use x11rb::CURRENT_TIME;
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, EventMask, ModMask};
-use x11rb::rust_connection::RustConnection;
+use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, MapState};
 use x11rb::wrapper::ConnectionExt as WrapperConnectionExt;
 
 pub fn startups(state: &mut crate::state::State) {
@@ -62,14 +60,19 @@ pub fn dbus_init() {
 }
 
 pub fn windows(state: &mut crate::state::State) {
+    // Ownership has been acquired before modifying the root or starting clients.
+    let screen = &state.conn.setup().roots[state.screen_num];
     state
         .conn
         .change_window_attributes(
             state.root,
-            &ChangeWindowAttributesAux::new()
-                .event_mask(EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY),
+            &ChangeWindowAttributesAux::new().background_pixel(screen.black_pixel),
         )
-        .expect("Failed to select input on root");
+        .expect("Failed to set background");
+    state
+        .conn
+        .clear_area(false, state.root, 0, 0, 0, 0)
+        .expect("Failed to clear root window");
 
     root_cursor(state);
 
@@ -114,35 +117,6 @@ fn root_cursor(state: &mut crate::state::State) {
     log::info!("Set root window cursor.");
 }
 
-pub fn connect() -> (RustConnection, usize) {
-    let (conn, screen_num) = x11rb::connect(None).expect("Failed to connect to X server");
-
-    let screen = &conn.setup().roots[screen_num];
-    let root = screen.root;
-
-    conn.ungrab_keyboard(CURRENT_TIME)
-        .expect("Failed to ungrab keyboard");
-    conn.ungrab_pointer(CURRENT_TIME)
-        .expect("Failed to ungrab pointer");
-    conn.ungrab_server().expect("Failed to ungrab server");
-    conn.ungrab_key(0u8, root, ModMask::ANY)
-        .expect("Failed to ungrab keys");
-
-    let black_pixel = screen.black_pixel;
-    conn.change_window_attributes(
-        root,
-        &ChangeWindowAttributesAux::new().background_pixel(black_pixel),
-    )
-    .expect("Failed to set background");
-
-    conn.clear_area(false, root, 0i16, 0i16, 0u16, 0u16)
-        .expect("Failed to clear window");
-
-    conn.sync().expect("Failed to sync");
-
-    (conn, screen_num)
-}
-
 pub fn logging(state: &crate::state::State) {
     let dir_str = shellexpand::tilde(&state.settings.files.log_directory).to_string();
     let dir_path = std::path::Path::new(&dir_str);
@@ -173,4 +147,75 @@ pub fn logging(state: &crate::state::State) {
         log::error!("Panic: {}", info);
         default_hook(info);
     }));
+}
+
+/// Adopt clients left by the previous WM, including iconic windows on hidden desktops.
+/// Override-redirect popups and withdrawn clients are not adopted.
+pub fn adopt_windows(state: &mut crate::state::State) {
+    let children = state
+        .conn
+        .query_tree(state.root)
+        .expect("Failed to query existing windows")
+        .reply()
+        .expect("Failed to read existing windows")
+        .children;
+    let original_monitor = state.current_monitor;
+    for window in children {
+        if window == state.manager.window {
+            continue;
+        }
+        let Ok(attributes) = state
+            .conn
+            .get_window_attributes(window)
+            .expect("Failed to query client")
+            .reply()
+        else {
+            continue;
+        };
+        if attributes.override_redirect {
+            continue;
+        }
+        if attributes.map_state == MapState::UNMAPPED {
+            let iconic = state
+                .conn
+                .get_property(
+                    false,
+                    window,
+                    state.atoms.WM_STATE,
+                    state.atoms.WM_STATE,
+                    0,
+                    2,
+                )
+                .ok()
+                .and_then(|cookie| cookie.reply().ok())
+                .and_then(|reply| reply.value32().and_then(|mut values| values.next()))
+                == Some(3);
+            if !iconic {
+                continue;
+            }
+        }
+        let Ok(geometry) = state
+            .conn
+            .get_geometry(window)
+            .expect("Failed to query client geometry")
+            .reply()
+        else {
+            continue;
+        };
+        let x = i32::from(geometry.x) + i32::from(geometry.width) / 2;
+        let y = i32::from(geometry.y) + i32::from(geometry.height) / 2;
+        state.current_monitor = state
+            .monitors
+            .iter()
+            .position(|monitor| {
+                x >= monitor.geometry.x
+                    && x < monitor.geometry.right()
+                    && y >= monitor.geometry.y
+                    && y < monitor.geometry.bottom()
+            })
+            .unwrap_or(0);
+        crate::events::window::manage_window(state, window);
+    }
+    state.current_monitor = original_monitor;
+    crate::windows::layout::relayout(state);
 }

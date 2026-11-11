@@ -1,29 +1,8 @@
-use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, CreateWindowAux, PropMode, WindowClass};
+use x11rb::protocol::xproto::{AtomEnum, PropMode};
 use x11rb::wrapper::ConnectionExt as WrapperConnectionExt;
 
 pub fn init(state: &mut crate::state::State) {
-    // Create a dummy window for EWMH compliance check
-    let check_window = state
-        .conn
-        .generate_id()
-        .expect("Failed to generate window id");
-    state
-        .conn
-        .create_window(
-            0,
-            check_window,
-            state.root,
-            0,
-            0,
-            1,
-            1,
-            0,
-            WindowClass::INPUT_OUTPUT,
-            0,
-            &CreateWindowAux::new(),
-        )
-        .expect("Failed to create check window");
+    let check_window = state.manager.window;
 
     // Set _NET_SUPPORTED on root window
     let supported_atoms = [
