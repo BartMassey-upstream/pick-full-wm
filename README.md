@@ -23,6 +23,11 @@ The executable is `target/release/pick-full-wm`. If installing it
 elsewhere, keep `help_window`, `key_hint`, `close_box`, and
 `monitor_box` in the same directory.
 
+For two independent XFCE logins under the same account, see
+[XFCE and LightDM setup](docs/xfce-lightdm.md). The guide keeps
+the existing XFCE/xfwm4 entry and adds a separate Pick-Full
+profile using the installed XFCE components.
+
 There two primary ways (that I know of) to launch into `pick-full-wm`.
 
 The first is via an appropriate `.xinitrc` file from a TTY session via the [`startx`](https://manpages.debian.org/buster/xinit/startx.1.en.html) command: it should be placed directly at your user folder (`~` / `/home/username/`). An example `.xinitrc` is found in the root of this repository.
