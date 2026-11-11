@@ -7,6 +7,7 @@ mod calc;
 mod events;
 mod ewmh;
 mod keymap;
+mod panels;
 mod safety;
 mod settings;
 mod setup;
@@ -22,6 +23,7 @@ fn main() {
     setup::input::mouse(&mut state);
     setup::input::keys(&mut state);
     setup::internal::windows(&mut state);
+    panels::refresh(&mut state);
     setup::internal::startups(&mut state);
     log::info!("Finished with initialization.");
 
@@ -34,6 +36,8 @@ fn main() {
         if !matches!(
             event,
             Event::MapRequest(_)
+                | Event::MapNotify(_)
+                | Event::PropertyNotify(_)
                 | Event::ButtonPress(_)
                 | Event::KeyRelease(_)
                 | Event::MappingNotify(_)
@@ -46,6 +50,8 @@ fn main() {
         }
         calc::update_current_monitor(&mut state);
         match event {
+            Event::MapNotify(_) => panels::refresh(&mut state),
+            Event::PropertyNotify(e) => events::window::property(&mut state, e),
             Event::MapRequest(e) => {
                 events::window::map_request(&mut state, e);
             }
@@ -63,15 +69,18 @@ fn main() {
             }
             Event::UnmapNotify(e) => {
                 events::window::unmap(&mut state, e);
+                panels::refresh(&mut state);
             }
             Event::DestroyNotify(e) => {
                 events::window::destroy(&mut state, e);
+                panels::refresh(&mut state);
             }
             Event::ClientMessage(e) => {
                 events::client::message(&mut state, e);
             }
             _ => {}
         }
+        panels::restack(&state);
         crate::windows::audits::full(&mut state);
     }
 }

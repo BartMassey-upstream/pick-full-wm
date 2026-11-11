@@ -1,6 +1,9 @@
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, Window};
 
 pub fn is_excepted_window(state: &mut crate::state::State, window: Window) -> bool {
+    if crate::panels::window_kind(state, window).is_some() {
+        return true;
+    }
     if is_help_window(state, window)
         || crate::windows::gets::key_hint_window(state, window).is_some()
     {
@@ -65,22 +68,6 @@ pub fn is_monitor_box(state: &mut crate::state::State, window: Window) -> bool {
         && name.contains("pfwm monitor")
     {
         return true;
-    }
-    false
-}
-
-pub fn is_dock(state: &crate::state::State, window: Window) -> bool {
-    if let Ok(prop) = state.conn.get_property(
-        false,
-        window,
-        state.atoms._NET_WM_WINDOW_TYPE,
-        AtomEnum::ATOM,
-        0,
-        1024,
-    ) && let Ok(reply) = prop.reply()
-        && let Some(mut window_types) = reply.value32()
-    {
-        return window_types.any(|t| t == state.atoms._NET_WM_WINDOW_TYPE_DOCK);
     }
     false
 }

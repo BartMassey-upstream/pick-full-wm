@@ -14,7 +14,7 @@ pub struct State {
     pub current_monitor: usize,
     pub current_workspace: usize,
     pub all_windows: HashSet<Window>,
-    pub docks: Vec<Window>, // panels / bars: kept above tiled windows
+    pub special_windows: HashMap<Window, crate::panels::WindowKind>,
     pub keyboard_mapping: Option<GetKeyboardMappingReply>,
     pub published_client_list: Vec<Window>,
     pub published_client_stacking: Vec<Window>,
@@ -50,7 +50,7 @@ impl State {
             current_monitor: 0,
             current_workspace: 0,
             all_windows: HashSet::new(),
-            docks: vec![],
+            special_windows: HashMap::new(),
             keyboard_mapping: None,
             published_client_list: vec![],
             published_client_stacking: vec![],
@@ -73,6 +73,9 @@ impl State {
     }
 }
 pub struct Monitor {
+    /// Physical bounds, independent of panel reservations and layout offsets.
+    pub geometry: crate::panels::Rect,
+    pub workarea: crate::panels::Rect,
     pub sizes: Sizes,
     pub position: (i32, i32),
     pub workspaces: Vec<Workspace>,
@@ -86,31 +89,76 @@ impl Monitor {
         index: usize,
         warnings: &mut Vec<String>,
     ) -> Self {
-        let sizes = Sizes::init(settings, monitor_info, index, warnings);
-        let parsed_position = monitor_setting(
+        let geometry = crate::panels::Rect {
+            x: monitor_info.position.0,
+            y: monitor_info.position.1,
+            width: monitor_info.size.0 as i32,
+            height: monitor_info.size.1 as i32,
+        };
+        let mut workspaces: Vec<Workspace> = vec![];
+        for _ in 0..settings.bindings.workspaces.len() {
+            workspaces.push(Workspace::new());
+        }
+        let mut monitor = Self {
+            geometry,
+            workarea: geometry,
+            sizes: Sizes {
+                main: (1, 1),
+                side: (0, 1),
+                available: (1, 1),
+            },
+            position: monitor_info.position,
+            workspaces,
+            close_box: None,
+            monitor_box: None,
+        };
+        monitor.set_workarea(settings, index, geometry, warnings);
+        monitor
+    }
+
+    /// Apply configured margins and proportions inside the panel-free area.
+    pub fn set_workarea(
+        &mut self,
+        settings: &crate::settings::Settings,
+        index: usize,
+        area: crate::panels::Rect,
+        warnings: &mut Vec<String>,
+    ) {
+        self.workarea = area;
+        let dimensions = (area.width as f32, area.height as f32);
+        let offset = monitor_setting(
             crate::calc::get_position,
-            (sizes.screen.0 as f32, sizes.screen.1 as f32),
+            dimensions,
             &settings.layout.top_left,
             index,
             crate::settings::DEFAULT_TOP_LEFT,
             "top_left",
             warnings,
         );
-        let position = (
-            parsed_position.0 + monitor_info.position.0,
-            parsed_position.1 + monitor_info.position.1,
+        let offset = (
+            offset.0.clamp(0, area.width - 1),
+            offset.1.clamp(0, area.height - 1),
         );
-        let mut workspaces: Vec<Workspace> = vec![];
-        for _ in 0..settings.bindings.workspaces.len() {
-            workspaces.push(Workspace::new());
-        }
-        Self {
-            sizes,
-            position,
-            workspaces,
-            close_box: None,
-            monitor_box: None,
-        }
+        self.position = (area.x + offset.0, area.y + offset.1);
+        let available = (area.width - offset.0, area.height - offset.1);
+        let requested = monitor_setting(
+            crate::calc::get_full_size,
+            dimensions,
+            &settings.layout.main_size,
+            index,
+            crate::settings::DEFAULT_MAIN_SIZE,
+            "main_size",
+            warnings,
+        );
+        let main = (
+            requested.0.clamp(1, available.0),
+            requested.1.clamp(1, available.1),
+        );
+        self.sizes = Sizes {
+            main,
+            side: (available.0 - main.0, main.1),
+            available,
+        };
     }
     pub fn print(&self) {
         println!(
@@ -124,30 +172,9 @@ impl Monitor {
 }
 
 pub struct Sizes {
-    pub screen: (i32, i32),
+    pub available: (i32, i32),
     pub main: (i32, i32),
     pub side: (i32, i32),
-}
-impl Sizes {
-    pub fn init(
-        settings: &crate::settings::Settings,
-        monitor_info: &MonitorInfo,
-        index: usize,
-        warnings: &mut Vec<String>,
-    ) -> Self {
-        let screen: (i32, i32) = (monitor_info.size.0 as i32, monitor_info.size.1 as i32);
-        let main = monitor_setting(
-            crate::calc::get_full_size,
-            (screen.0 as f32, screen.1 as f32),
-            &settings.layout.main_size,
-            index,
-            crate::settings::DEFAULT_MAIN_SIZE,
-            "main_size",
-            warnings,
-        );
-        let side = (screen.0 - main.0, main.1);
-        Self { screen, main, side }
-    }
 }
 
 // per-monitor layout entry, falling back to the default if missing or malformed

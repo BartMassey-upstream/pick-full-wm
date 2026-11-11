@@ -9,7 +9,7 @@ pub fn button(state: &mut crate::state::State, event: ButtonPressEvent) {
     let is_picking =
         event.state.contains(KeyButMask::MOD4) || !state.settings.bindings.super_for_clicks;
     if !crate::safety::window_exists(state, event.child)
-        || state.docks.contains(&event.child)
+        || state.special_windows.contains_key(&event.child)
         || crate::windows::checks::is_excepted_window(state, event.child)
         || crate::windows::checks::is_popup(state, event.child)
     {
@@ -282,10 +282,8 @@ pub fn key(state: &mut crate::state::State, event: KeyReleaseEvent) {
             let target = &state.monitors[index];
 
             // Calculate center position, clamping to i16 range to prevent overflow
-            let x = (target.position.0 + (target.sizes.screen.0 as f32 * 0.5) as i32)
-                .clamp(-32768, 32767) as i16;
-            let y = (target.position.1 + (target.sizes.screen.1 as f32 * 0.5) as i32)
-                .clamp(-32768, 32767) as i16;
+            let x = (target.geometry.x + target.geometry.width / 2).clamp(-32768, 32767) as i16;
+            let y = (target.geometry.y + target.geometry.height / 2).clamp(-32768, 32767) as i16;
 
             if let Err(e) = state.conn.warp_pointer(0u32, state.root, 0, 0, 0, 0, x, y) {
                 log::error!("events::key(..) warp pointer error: {:?}", e);

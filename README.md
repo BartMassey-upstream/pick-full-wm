@@ -26,6 +26,30 @@ The current mouse defaults use [`xfce4-panel`](https://packages.debian.org/trixi
 
 By default, both settings place their log files in `~/.local/share/pick-full-wm/logs/`. A new log file is placed here upon every startup of the window manager: named along the lines of `DATE-TIME.log`.
 
+# Panels
+
+Panels that advertise EWMH struts automatically reserve space on
+the affected monitors. Dock and desktop windows are recognized
+by `_NET_WM_WINDOW_TYPE`; they do not need title exclusions.
+Reservations update when panels appear, disappear, or change
+their struts (including auto-hide). `_NET_WM_STRUT_PARTIAL` takes
+precedence over the older `_NET_WM_STRUT` property.
+
+Layout percentages and `top_left` offsets apply inside the usable
+area. Remove old manual panel gaps to avoid reserving space twice.
+Fullscreen still covers the physical monitor, including panels.
+The root `_NET_WORKAREA` property reports one conservative
+rectangle per workspace; tiling uses each monitor's own area.
+
+# Testing
+
+Run unit tests with `cargo test --locked`. X11 integration tests
+use isolated displays and require `Xvfb`:
+
+```sh
+cargo test --locked --test x11 -- --ignored
+```
+
 # Features and TODOs
 
 - [x] Splits area in "main" and "side"

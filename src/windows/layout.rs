@@ -16,7 +16,7 @@ pub fn main_geometry(
     let width = if side == "both" {
         if fill {
             if side_count == 0 {
-                monitor.sizes.screen.0
+                monitor.sizes.available.0
             } else if side_count == 1 {
                 monitor.sizes.main.0 + half_side
             } else {
@@ -26,7 +26,7 @@ pub fn main_geometry(
             monitor.sizes.main.0
         }
     } else if fill && side_count == 0 {
-        monitor.sizes.screen.0
+        monitor.sizes.available.0
     } else {
         monitor.sizes.main.0
     };
@@ -95,8 +95,8 @@ pub fn layout_side_space(state: &mut crate::state::State) {
                 &ConfigureWindowAux::new()
                     .x(position.0)
                     .y(position.1)
-                    .width(size.0) // TODO: take into account x offset
-                    .height(size.1),
+                    .width(size.0.max(1))
+                    .height(size.1.max(1)),
             ) {
                 log::error!("windows::layout_side_space(..) move window error: {:?}", e);
             }
@@ -127,13 +127,10 @@ pub fn fullscreen(state: &mut crate::state::State, window: Window) {
     if let Err(e) = state.conn.configure_window(
         window,
         &ConfigureWindowAux::new()
-            .x(state.monitor().position.0
-                + ((state.monitor().sizes.main.0 + state.monitor().sizes.side.0)
-                    - state.monitor().sizes.screen.0))
-            .y(state.monitor().position.1
-                + (state.monitor().sizes.main.1 - state.monitor().sizes.screen.1))
-            .width(state.monitor().sizes.screen.0 as u32)
-            .height(state.monitor().sizes.screen.1 as u32),
+            .x(state.monitor().geometry.x)
+            .y(state.monitor().geometry.y)
+            .width(state.monitor().geometry.width as u32)
+            .height(state.monitor().geometry.height as u32),
     ) {
         log::error!("windows::fullscreen(..) move window error: {:?}", e);
     }
@@ -175,10 +172,10 @@ pub fn center_window(state: &mut crate::state::State, window: Window) {
             window,
             &ConfigureWindowAux::new()
                 .x(state.monitor().position.0
-                    + ((state.monitor().sizes.screen.0 - geometry.width as i32) as f32 / 2f32)
+                    + ((state.monitor().sizes.available.0 - geometry.width as i32) as f32 / 2f32)
                         as i32)
                 .y(state.monitor().position.1
-                    + ((state.monitor().sizes.screen.1 - geometry.height as i32) as f32 / 2f32)
+                    + ((state.monitor().sizes.available.1 - geometry.height as i32) as f32 / 2f32)
                         as i32),
         ) {
             log::error!("windows::center_window(..) move window error: {:?}", e);
@@ -279,38 +276,17 @@ pub fn place_monitor_boxes(state: &mut crate::state::State) {
     }
 }
 
-// docks sit above everything but a fullscreen main on their monitor
-pub fn raise_docks(state: &mut crate::state::State) {
-    let docks: Vec<Window> = state
-        .docks
-        .iter()
-        .copied()
-        .filter(|w| crate::safety::window_exists(state, *w))
-        .collect();
-    state.docks = docks.clone();
-    for dock in docks {
-        let dock_x = match state.conn.get_geometry(dock) {
-            Ok(cookie) => match cookie.reply() {
-                Ok(reply) => reply.x as i32,
-                Err(_) => continue,
-            },
-            Err(_) => continue,
-        };
-        let is_covered = state.monitors.iter().any(|m| {
-            dock_x >= m.position.0
-                && dock_x < m.position.0 + m.sizes.screen.0
-                && m.workspaces[state.current_workspace].is_fullscreen()
-        });
-        if !is_covered
-            && let Err(e) = state.conn.configure_window(
-                dock,
-                &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
-            )
-        {
-            log::error!("windows::raise_docks(..) raise window error: {:?}", e);
-        }
+/// Reflow all visible monitors and restore the original monitor's focus.
+pub fn relayout(state: &mut crate::state::State) {
+    let current_monitor = state.current_monitor;
+    for index in 0..state.monitors.len() {
+        state.current_monitor = index;
+        layout_side_space(state);
     }
-    if let Err(e) = state.conn.flush() {
-        log::error!("windows::raise_docks(..) flush error: {:?}", e);
+    state.current_monitor = current_monitor;
+    if state.workspace().main_window.is_some() {
+        crate::windows::core::focus_main(state);
+    } else {
+        crate::ewmh::clear_active(state);
     }
 }

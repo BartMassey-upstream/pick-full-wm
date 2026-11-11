@@ -3,7 +3,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     Allow, CONFIGURE_NOTIFY_EVENT, ConfigWindow, ConfigureNotifyEvent, ConfigureRequestEvent,
     ConfigureWindowAux, ConnectionExt, DestroyNotifyEvent, EventMask, MapRequestEvent,
-    UnmapNotifyEvent,
+    PropertyNotifyEvent, UnmapNotifyEvent,
 };
 
 pub fn map_request(state: &mut crate::state::State, event: MapRequestEvent) {
@@ -117,12 +117,8 @@ pub fn map_request(state: &mut crate::state::State, event: MapRequestEvent) {
         crate::windows::layout::place_monitor_boxes(state);
         return;
     }
-    if crate::windows::checks::is_dock(state, event.window) {
-        log::info!("Window {} should be a dock.", event.window);
-        if !state.docks.contains(&event.window) {
-            state.docks.push(event.window);
-        }
-        crate::windows::layout::raise_docks(state);
+    if crate::panels::window_kind(state, event.window).is_some() {
+        crate::panels::refresh(state);
         return;
     }
     if crate::windows::checks::is_excepted_window(state, event.window) {
@@ -272,5 +268,18 @@ pub fn configure_request(state: &mut crate::state::State, event: ConfigureReques
     }
     if let Err(e) = state.conn.flush() {
         log::error!("events::configure_request(..) flush error: {:?}", e);
+    }
+}
+
+/// Recompute panel space when a client changes its type or reservation.
+pub fn property(state: &mut crate::state::State, event: PropertyNotifyEvent) {
+    if [
+        state.atoms._NET_WM_STRUT,
+        state.atoms._NET_WM_STRUT_PARTIAL,
+        state.atoms._NET_WM_WINDOW_TYPE,
+    ]
+    .contains(&event.atom)
+    {
+        crate::panels::refresh(state);
     }
 }

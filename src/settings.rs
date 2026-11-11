@@ -60,8 +60,8 @@ impl Default for Settings {
                 excluded: vec!["polybar".to_owned(), "rofi".to_owned()],
             },
             layout: Layout {
-                main_size: vec!["80%x96%".to_owned(), "80%x100%".to_owned()],
-                top_left: vec!["0,4%".to_owned(), "0,0".to_owned()],
+                main_size: vec!["80%x100%".to_owned(), "80%x100%".to_owned()],
+                top_left: vec!["0,0".to_owned(), "0,0".to_owned()],
                 side_orientation: "right".to_owned(),
                 conditional_full: true,
                 new_to_main: true,

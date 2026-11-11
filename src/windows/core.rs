@@ -75,7 +75,7 @@ pub fn focus_main(state: &mut crate::state::State) {
     }
     crate::windows::layout::place_close_boxes(state);
     crate::windows::layout::place_monitor_boxes(state);
-    crate::windows::layout::raise_docks(state);
+    crate::panels::restack(state);
 }
 
 // newest floating window on this workspace that should take keyboard focus

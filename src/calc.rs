@@ -52,10 +52,10 @@ pub fn update_current_monitor(state: &mut crate::state::State) {
     let root_y = reply.root_y as i32;
 
     for (i, monitor) in state.monitors.iter().enumerate() {
-        if root_x >= monitor.position.0
-            && root_x < monitor.position.0 + monitor.sizes.screen.0
-            && root_y >= monitor.position.1
-            && root_y < monitor.position.1 + monitor.sizes.screen.1
+        if root_x >= monitor.geometry.x
+            && root_x < monitor.geometry.right()
+            && root_y >= monitor.geometry.y
+            && root_y < monitor.geometry.bottom()
         {
             if state.current_monitor != i {
                 log::info!("Updated monitor index to {}.", i);

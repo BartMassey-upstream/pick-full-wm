@@ -34,6 +34,13 @@ pub fn init(state: &mut crate::state::State) {
         state.atoms._NET_NUMBER_OF_DESKTOPS,
         state.atoms._NET_CURRENT_DESKTOP,
         state.atoms._NET_DESKTOP_NAMES,
+        state.atoms._NET_WORKAREA,
+        state.atoms._NET_WM_WINDOW_TYPE,
+        state.atoms._NET_WM_WINDOW_TYPE_NORMAL,
+        state.atoms._NET_WM_WINDOW_TYPE_DOCK,
+        state.atoms._NET_WM_WINDOW_TYPE_DESKTOP,
+        state.atoms._NET_WM_STRUT,
+        state.atoms._NET_WM_STRUT_PARTIAL,
     ];
 
     state
