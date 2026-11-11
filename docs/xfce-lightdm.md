@@ -301,16 +301,38 @@ not from a terminal in either running desktop.
 set -eu
 umask 077
 
-if [ -z "${DISPLAY:-}" ] || [ -n "${SESSION_MANAGER:-}" ]; then
-    echo 'Use a fresh LightDM X11 login for this profile.' >&2
+pf_profile="$HOME/.local/share/xfce-pick-full"
+pf_state="$pf_profile/state"
+mkdir -p "$pf_state"
+pf_stamp=$(date -u '+%Y%m%dT%H%M%SZ')
+pf_log=$(mktemp "$pf_state/session-$pf_stamp-XXXXXX.log")
+exec >>"$pf_log" 2>&1
+trap '
+    pf_status=$?
+    trap - 0
+    printf "Session ended: %s; status=%s\n" \
+        "$(date -u)" "$pf_status"
+    exit "$pf_status"
+' 0
+
+fail() {
+    printf 'ERROR: %s\n' "$*" >&2
     exit 1
+}
+
+printf 'Started: %s; launcher PID=%s\n' "$(date -u)" "$$"
+printf 'Session ID=%s display=%s VT=%s\n' \
+    "${XDG_SESSION_ID:-unknown}" "${DISPLAY:-unset}" \
+    "${XDG_VTNR:-unknown}"
+export RUST_BACKTRACE=1
+
+if [ -z "${DISPLAY:-}" ] || [ -n "${SESSION_MANAGER:-}" ]; then
+    fail 'Use a fresh LightDM X11 login for this profile.'
 fi
 if [ "${XDG_SESSION_TYPE:-x11}" != x11 ]; then
-    echo 'Pick-Full requires an X11 session.' >&2
-    exit 1
+    fail 'Pick-Full requires an X11 session.'
 fi
 
-pf_profile="$HOME/.local/share/xfce-pick-full"
 export XDG_CONFIG_HOME="$pf_profile/config"
 export XDG_CACHE_HOME="$pf_profile/cache"
 export XDG_DATA_HOME="$pf_profile/data"
@@ -329,18 +351,34 @@ mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" \
     "$XDG_DATA_HOME" "$XDG_STATE_HOME"
 
 pf_channels="$XDG_CONFIG_HOME/xfce4/xfconf/xfce-perchannel-xml"
-test -r "$pf_channels/xfce4-session.xml"
-test -r "$HOME/.config/pick-full-wm/settings.toml"
-test -x "$pf_profile/bin/pick-full-wm"
-test -x "$pf_profile/bin/help_window"
-test -x "$pf_profile/bin/key_hint"
-test -x "$pf_profile/bin/close_box"
-test -x "$pf_profile/bin/monitor_box"
+for pf_file in "$pf_channels/xfce4-session.xml" \
+    "$HOME/.config/pick-full-wm/settings.toml"
+do
+    test -r "$pf_file" || fail "Cannot read: $pf_file"
+done
+for pf_program in "$pf_profile/bin/pick-full-wm" \
+    "$pf_profile/bin/help_window" "$pf_profile/bin/key_hint" \
+    "$pf_profile/bin/close_box" "$pf_profile/bin/monitor_box" \
+    /usr/bin/dbus-run-session /usr/bin/xfce4-session
+do
+    test -x "$pf_program" || fail "Cannot execute: $pf_program"
+done
 
-exec >>"$XDG_STATE_HOME/session.log" 2>&1
-exec /usr/bin/dbus-run-session -- \
+printf 'Config=%s\nCache=%s\nData=%s\nState=%s\n' \
+    "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" \
+    "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+printf 'Starting XFCE with a private session bus.\n'
+/usr/bin/dbus-run-session -- \
     /usr/bin/xfce4-session --disable-tcp
 ```
+
+The launcher records a separate `state/session-*.log` for each
+attempt, starting before its preflight checks. It waits for the
+session manager so the exit trap can record the final status.
+It logs selected display/profile metadata, not the complete
+environment. Failure to create the log itself still goes to
+LightDM's session error log. A forced kill or power failure can
+leave the final status line unwritten.
 
 The private bus inherits the profile paths before any XFCE
 settings service is activated. `dbus-run-session` sets the new
@@ -411,6 +449,27 @@ normal XFCE entry when returning to the daily desktop.
 
 ## Verify a round trip before daily use
 
+An additive test installation is a reasonable next step after
+checking the actual machine's startup files and autostarts.
+Creating the private profile and adding a new session entry does
+not start it or change the existing XFCE entry. Keep the normal
+login selected until ready to test, and leave autologin unchanged.
+
+Before the first attempt, verify that a text console is usable
+(for example, Ctrl+Alt+F3 on an available VT). Save work and fully
+log out of the daily desktop. Initially test with disposable
+application windows. A failed login, missing panel, or unusable
+WM can require terminating the experimental session; do not
+depend on the experimental desktop's logout button working.
+
+The automated Xvfb tests cover WM behavior, not this machine's
+complete LightDM login. An optional Xephyr check can exercise the
+WM in a nested X server, but does not validate PAM or LightDM.
+Use a dedicated test launcher with private state and
+`--no-session-services`; the repository's `xeph.sh` does not
+provide those safeguards. Keep the full XFCE login test separate
+from the running daily session. See the [Xephyr manual][xephyr].
+
 1. Record the daily profile's actual XDG locations. After a
    normal logout, use a text console to back up and record file
    hashes for its XFCE configuration and saved-session cache.
@@ -452,10 +511,56 @@ it writes beneath that profile's `cache/sessions/`.
 ## Recovery and removal
 
 If the new login fails, return to LightDM and select the original
-XFCE entry. Inspect the new profile's `state/session.log`,
-`state/wm-logs/`, and the relevant login log. If startup loops,
-use a text console to remove the added session entry before
-trying again.
+XFCE entry. If the desktop is stuck, switch to the prepared text
+console and inspect the session ID recorded in the new log:
+
+```sh
+loginctl list-sessions
+loginctl session-status SESSION_ID
+```
+
+Replace `SESSION_ID` with the experimental graphical session's
+actual ID and verify its user, display, and VT. To end that
+session, use `loginctl terminate-session SESSION_ID`. This closes
+its applications, so unsaved work in them is lost. Target only
+that session; leave the text console and LightDM running. Then
+select normal XFCE in the greeter. These session-specific
+operations are documented by [loginctl][loginctl].
+
+If startup loops, remove only the added session entry from a text
+console before trying again. Removing the entry prevents another
+selection; it does not terminate an already running session.
+
+### Logs to keep from a failed attempt
+
+All private paths below are relative to
+`~/.local/share/xfce-pick-full/`:
+
+- `state/session-*.log`: one file per login attempt, containing
+  preflight errors, session ID/display/VT, profile paths, inherited
+  stdout/stderr from session programs, and the session manager's
+  exit status when available. `RUST_BACKTRACE=1` enables Rust panic
+  backtraces in captured stderr.
+- `state/wm-logs/*.log`: Pick-Full's timestamped event and error
+  logs, using the `[files]` setting above. Early WM initialization
+  can fail before this logger starts; consult the session log too.
+- LightDM's own logs: needed if authentication, X startup, or
+  executing the launcher fails before a private log is created.
+  Its configured system log directory is commonly
+  `/var/log/lightdm/`; check the service journal as well.
+
+For a failed attempt on a systemd machine:
+
+```sh
+journalctl -b -u lightdm.service --since '10 minutes ago'
+```
+
+The [journalctl manual][journalctl] describes filtering by boot,
+unit, and time. System log access can require administrative
+permissions. Preserve the relevant attempt's logs before another
+normal login, since distribution session-error logs can rotate.
+A black screen with no exit status may be a hang, not a crash;
+`loginctl session-status` helps identify processes still running.
 
 A saved-session reset, if ever needed, applies only to
 `~/.local/share/xfce-pick-full/cache/sessions/`, with the profile
@@ -478,3 +583,6 @@ global process killing, or changes to the original session.
 [xfsm-man]: https://manpages.debian.org/trixie/xfce4-session/xfce4-session.1.en.html
 [xinitrc]: https://gitlab.xfce.org/xfce/xfce4-session/-/blob/xfce-4.20/scripts/xinitrc.in
 [lightdm]: https://github.com/ubuntu/lightdm/blob/main/data/lightdm.conf
+[xephyr]: https://manpages.debian.org/trixie/xserver-xephyr/Xephyr.1.en.html
+[loginctl]: https://manpages.debian.org/trixie/systemd/loginctl.1.en.html
+[journalctl]: https://manpages.debian.org/trixie/systemd/journalctl.1.en.html
