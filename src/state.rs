@@ -177,7 +177,7 @@ pub struct Sizes {
     pub side: (i32, i32),
 }
 
-// per-monitor layout entry, falling back to the default if missing or malformed
+/// Repeat the last monitor override; use defaults for empty or malformed entries.
 fn monitor_setting(
     parse: fn(f32, f32, &str) -> Option<(i32, i32)>,
     screen: (f32, f32),
@@ -187,16 +187,11 @@ fn monitor_setting(
     name: &str,
     warnings: &mut Vec<String>,
 ) -> (i32, i32) {
-    let value = match entries.get(index) {
-        Some(value) => value.as_str(),
-        None => {
-            warnings.push(format!(
-                "No layout.{} entry for monitor {}: using default \"{}\".",
-                name, index, default
-            ));
-            default
-        }
-    };
+    let value = entries
+        .get(index)
+        .or_else(|| entries.last())
+        .map(String::as_str)
+        .unwrap_or(default);
     match parse(screen.0, screen.1, value) {
         Some(parsed) => parsed,
         None => {
@@ -278,4 +273,67 @@ pub fn get_monitor_infos(conn: &RustConnection, root: Window) -> Vec<MonitorInfo
         }
     }
     monitor_infos
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings(layout: &str) -> crate::settings::Settings {
+        crate::settings::Settings {
+            layout: toml::from_str(layout).unwrap(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn extra_monitors_repeat_the_last_size_and_offset_independently() {
+        let settings = settings(
+            r#"
+            main_size = ["70%x100%", "60%x90%"]
+            top_left = ["0,10%"]
+            conditional_full = true
+        "#,
+        );
+        let info = MonitorInfo {
+            position: (2000, 0),
+            size: (1000, 800),
+        };
+        let first = Monitor::new(&settings, &info, 0, &mut Vec::new());
+        let third = Monitor::new(&settings, &info, 2, &mut Vec::new());
+        assert_eq!(first.sizes.main, (700, 720));
+        assert_eq!(third.sizes.main, (600, 720));
+        assert_eq!(third.position, (2000, 80));
+        assert_eq!(third.sizes.side, (400, 720));
+    }
+
+    #[test]
+    fn missing_and_empty_arrays_use_defaults_for_any_monitor() {
+        for layout in [
+            "conditional_full = true",
+            "main_size = []\ntop_left = []\nconditional_full = true",
+        ] {
+            let settings = settings(layout);
+            let info = MonitorInfo {
+                position: (3840, 1080),
+                size: (1000, 800),
+            };
+            let mut monitor = Monitor::new(&settings, &info, 9, &mut Vec::new());
+            assert_eq!(monitor.position, (3840, 1080));
+            assert_eq!(monitor.sizes.main, (800, 800));
+            monitor.set_workarea(
+                &settings,
+                9,
+                crate::panels::Rect {
+                    x: 3840,
+                    y: 1120,
+                    width: 1000,
+                    height: 760,
+                },
+                &mut Vec::new(),
+            );
+            assert_eq!(monitor.position, (3840, 1120));
+            assert_eq!(monitor.sizes.main, (800, 760));
+        }
+    }
 }

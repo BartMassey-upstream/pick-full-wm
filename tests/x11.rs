@@ -381,3 +381,17 @@ fn fullscreen_covers_panels_and_returns_to_the_latest_workarea() {
     session.super_key(u32::from('f'));
     session.expect_geometry(main, (0, 60, 1280, 660));
 }
+
+#[test]
+#[ignore = "requires Xvfb"]
+fn empty_monitor_arrays_start_with_a_usable_layout() {
+    let settings = SETTINGS
+        .replace("main_size = [\"80%x100%\", \"80%x100%\"]", "main_size = []")
+        .replace("top_left = [\"0,0\", \"0,0\"]", "top_left = []");
+    let mut session = Session::new(&settings);
+    session.spawn_wm(&[]);
+    session.expect_workarea([0, 0, 1280, 720]);
+    let main = session.window(None, 10, 10, 100, 100);
+    session.map(main);
+    session.expect_geometry(main, (0, 0, 1280, 720));
+}

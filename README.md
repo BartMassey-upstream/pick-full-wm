@@ -41,6 +41,21 @@ Fullscreen still covers the physical monitor, including panels.
 The root `_NET_WORKAREA` property reports one conservative
 rectangle per workspace; tiling uses each monitor's own area.
 
+# Monitor configuration
+
+`layout.main_size` and `layout.top_left` are independent lists of
+per-monitor overrides, ordered from left to right. If there are
+more monitors than entries, the last entry repeats. One entry
+therefore configures any number of monitors. An omitted or empty
+list uses `80%x100%` for `main_size` or `0,0` for `top_left`.
+
+```toml
+[layout]
+main_size = ["80%x100%"]
+top_left = ["0,0"]
+conditional_full = true
+```
+
 # Testing
 
 Run unit tests with `cargo test --locked`. X11 integration tests

@@ -5,8 +5,8 @@ startups = [ "polybar" ]
 excluded = [ "polybar", "rofi" ] # matched against window class (WM_CLASS)
 
 [layout]
-main_size = [ "80%x100%", "80%x100%" ] # inside panel workareas
-top_left = [ "0,0", "0,0" ] # additional margins inside workareas
+main_size = [ "80%x100%" ] # last entry repeats on additional monitors
+top_left = [ "0,0" ] # additional margins inside panel-free areas
 side_orientation = "right" # left / right / both
 conditional_full = true # fill side if none
 new_to_main = true # new windows fill main area, rather than send to side
